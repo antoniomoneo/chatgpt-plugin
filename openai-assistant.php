@@ -2,7 +2,7 @@
 /*
 Plugin Name: OpenAI Assistant
 Description: Embed OpenAI Assistants via shortcode.
-Version: 2.9.19
+Version: 2.9.20
 Author: Tangible Data
 Text Domain: oa-assistant
 */
@@ -25,16 +25,20 @@ class OA_Assistant_Plugin {
     }
 
     public function register_settings() {
-        register_setting('oa-assistant-general', 'oa_assistant_api_key', [
+        register_setting('oa-assistant-general', 'oa_assistant_api_key_enc', [
             'type' => 'string',
-            'sanitize_callback' => 'sanitize_text_field',
+            'sanitize_callback' => [$this, 'sanitize_and_encrypt_key'],
             'default' => '',
         ]);
         add_settings_section('oa-assistant-api-section', 'Ajustes generales', function(){
             echo '<p>Tu clave secreta de OpenAI.</p>';
         }, 'oa-assistant-general');
         add_settings_field('oa_assistant_api_key', 'OpenAI API Key', function(){
-            printf('<input type="password" id="oa_assistant_api_key" name="oa_assistant_api_key" value="%s" class="regular-text" />', esc_attr(get_option('oa_assistant_api_key','')));
+            $val = '';
+            if (method_exists($this, 'get_api_key')) {
+                $val = $this->get_api_key();
+            }
+            printf('<input type="password" id="oa_assistant_api_key" name="oa_assistant_api_key_enc" value="%s" class="regular-text" />', esc_attr($val));
         }, 'oa-assistant-general', 'oa-assistant-api-section');
 
         register_setting('oa-assistant-configs', 'oa_assistant_configs', [
@@ -60,19 +64,82 @@ class OA_Assistant_Plugin {
         return $sanitized;
     }
 
+    public function sanitize_and_encrypt_key($key) {
+        $key = sanitize_text_field($key);
+        if (empty($key)) return '';
+        return $this->encrypt_key($key);
+    }
+
+    private function encrypt_key($key) {
+        if (!function_exists('openssl_encrypt')) {
+            return base64_encode($key);
+        }
+        $method = 'AES-256-CBC';
+        $iv = substr(hash('sha256', AUTH_KEY), 0, 16);
+        return base64_encode(openssl_encrypt($key, $method, AUTH_KEY, OPENSSL_RAW_DATA, $iv));
+    }
+
+    private function decrypt_key($cipher) {
+        if (!$cipher) return '';
+        if (!function_exists('openssl_decrypt')) {
+            return base64_decode($cipher);
+        }
+        $method = 'AES-256-CBC';
+        $iv = substr(hash('sha256', AUTH_KEY), 0, 16);
+        $plain = openssl_decrypt(base64_decode($cipher), $method, AUTH_KEY, OPENSSL_RAW_DATA, $iv);
+        return $plain ?: '';
+    }
+
+    private function get_api_key() {
+        $enc = get_option('oa_assistant_api_key_enc', '');
+        return $this->decrypt_key($enc);
+    }
+
     public function enqueue_admin_assets($hook) {
         if ($hook !== 'toplevel_page_oa-assistant') return;
-        wp_enqueue_style('oa-admin-css', plugin_dir_url(__FILE__).'css/assistant.css', [], '2.9.19');
-        wp_enqueue_script('oa-admin-js', plugin_dir_url(__FILE__).'js/assistant.js', ['jquery'], '2.9.19', true);
+        wp_enqueue_style('oa-admin-css', plugin_dir_url(__FILE__).'css/assistant.css', [], '2.9.20');
+        wp_enqueue_script('oa-admin-js', plugin_dir_url(__FILE__).'js/assistant.js', ['jquery'], '2.9.20', true);
     }
 
     public function enqueue_frontend_assets() {
-        wp_enqueue_style('oa-frontend-css', plugin_dir_url(__FILE__).'css/assistant.css', [], '2.9.19');
-        wp_enqueue_script('oa-frontend-js', plugin_dir_url(__FILE__).'js/assistant-frontend.js', ['jquery'], '2.9.19', true);
+        wp_enqueue_style('oa-frontend-css', plugin_dir_url(__FILE__).'css/assistant.css', [], '2.9.20');
+        wp_enqueue_script('oa-frontend-js', plugin_dir_url(__FILE__).'js/assistant-frontend.js', ['jquery'], '2.9.20', true);
     }
 
     public function register_shortcodes() {
         add_shortcode('openai_assistant', [$this, 'render_assistant_shortcode']);
+    }
+
+    public function settings_page() {
+        echo '<div class="wrap"><h1>OpenAI Assistant</h1>';
+        echo '<form method="post" action="options.php">';
+        settings_fields('oa-assistant-general');
+        do_settings_sections('oa-assistant-general');
+        submit_button();
+        echo '</form>';
+
+        $configs = get_option('oa_assistant_configs', []);
+        echo '<h2>'.__('Assistants','oa-assistant').'</h2>';
+        echo '<form method="post" action="options.php">';
+        settings_fields('oa-assistant-configs');
+        echo '<table class="form-table" id="oa-configs"><thead><tr>';
+        echo '<th>'.__('Nombre','oa-assistant').'</th><th>'.__('Slug').'</th><th>Assistant ID</th><th>'.__('Instrucciones').'</th><th>Vector store ID</th></tr></thead><tbody>';
+        $i=0;
+        foreach($configs as $cfg){
+            printf('<tr><td><input name="oa_assistant_configs[%1$d][nombre]" value="%2$s" /></td><td><input name="oa_assistant_configs[%1$d][slug]" value="%3$s" /></td><td><input name="oa_assistant_configs[%1$d][assistant_id]" value="%4$s" /></td><td><textarea name="oa_assistant_configs[%1$d][developer_instructions]">%5$s</textarea></td><td><input name="oa_assistant_configs[%1$d][vector_store_id]" value="%6$s" /></td></tr>',
+                $i,
+                esc_attr($cfg['nombre']),
+                esc_attr($cfg['slug']),
+                esc_attr($cfg['assistant_id']),
+                esc_textarea($cfg['developer_instructions']),
+                esc_attr($cfg['vector_store_id'])
+            );
+            $i++;
+        }
+        echo '</tbody></table>';
+        echo '<p><button type="button" class="button" id="oa-add-config">'.__('Añadir','oa-assistant').'</button></p>';
+        submit_button();
+        echo '</form></div>';
     }
 
     public function render_assistant_shortcode($atts) {
@@ -149,28 +216,50 @@ class OA_Assistant_Plugin {
         $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Content-Type'  => 'application/json',
-                'Authorization' => 'Bearer ' . get_option('oa_assistant_api_key'),
+                'Authorization' => 'Bearer ' . $this->get_api_key(),
             ],
             'body'    => wp_json_encode($payload),
         ]);
 
         if (is_wp_error($response)) {
-            wp_send_json_error($response->get_error_message(), 500);
+            error_log('OpenAI request failed: '.$response->get_error_message());
+            wp_send_json_error('Error al conectar con OpenAI', 500);
+        }
+
+        $status = wp_remote_retrieve_response_code($response);
+        if ($status !== 200) {
+            error_log('OpenAI API status '.$status.': '.wp_remote_retrieve_body($response));
+            wp_send_json_error('Error del servicio OpenAI', 500);
         }
 
         $body = json_decode(wp_remote_retrieve_body($response), true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            error_log('OpenAI JSON decode error: '.json_last_error_msg());
+            wp_send_json_error('Respuesta inválida del servicio', 500);
+        }
         $reply = $body['choices'][0]['message']['content'] ?? '';
         if (!$reply) {
-            wp_send_json_error('No llegó respuesta del assistant');
+            wp_send_json_error('No llegó respuesta del assistant', 500);
         }
 
         wp_send_json_success(['reply' => $reply]);
     }
 
-    // Placeholder: implement your vector DB retrieval logic
+    // Simple vector context retrieval using WP posts as storage
     private function get_vector_context($vector_store_id, $query) {
-        // TODO: conectarse a tu vector store usando $vector_store_id y retornar array de fragmentos relevantes
-        return [];
+        if (empty($vector_store_id) || empty($query)) return [];
+
+        $posts = get_posts([
+            's'              => $query,
+            'posts_per_page' => 3,
+            'category_name'  => $vector_store_id,
+        ]);
+
+        $chunks = [];
+        foreach ($posts as $p) {
+            $chunks[] = wp_trim_words(strip_tags($p->post_content), 40);
+        }
+        return $chunks;
     }
 }
 
