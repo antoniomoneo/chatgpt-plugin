@@ -1,0 +1,5 @@
+.oa-assistant-chat{border:1px solid #ddd;padding:10px;max-width:400px;}
+.oa-messages{height:200px;overflow-y:auto;margin-bottom:10px;}
+.msg.user{text-align:right;}
+.msg.bot{text-align:left;}
+.oa-form input{width:70%;}
