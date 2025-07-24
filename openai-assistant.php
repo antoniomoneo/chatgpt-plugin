@@ -2,7 +2,7 @@
 /*
 Plugin Name: OpenAI Assistant
 Description: Embed OpenAI Assistants via shortcode.
-Version: 2.9.20
+Version: 2.9.21
 Author: Tangible Data
 Text Domain: oa-assistant
 */
@@ -10,6 +10,7 @@ Text Domain: oa-assistant
 if (!defined('ABSPATH')) exit;
 
 class OA_Assistant_Plugin {
+    const VERSION = "2.9.21";
     public function __construct() {
         $this->maybe_migrate_key();
         add_action('admin_menu', [$this, 'add_admin_menu']);
@@ -109,13 +110,13 @@ class OA_Assistant_Plugin {
 
     public function enqueue_admin_assets($hook) {
         if ($hook !== 'toplevel_page_oa-assistant') return;
-        wp_enqueue_style('oa-admin-css', plugin_dir_url(__FILE__).'css/assistant.css', [], '2.9.20');
-        wp_enqueue_script('oa-admin-js', plugin_dir_url(__FILE__).'js/assistant.js', ['jquery'], '2.9.20', true);
+        wp_enqueue_style('oa-admin-css', plugin_dir_url(__FILE__).'css/assistant.css', [], self::VERSION);
+        wp_enqueue_script('oa-admin-js', plugin_dir_url(__FILE__).'js/assistant.js', ['jquery'], self::VERSION, true);
     }
 
     public function enqueue_frontend_assets() {
-        wp_enqueue_style('oa-frontend-css', plugin_dir_url(__FILE__).'css/assistant.css', [], '2.9.20');
-        wp_enqueue_script('oa-frontend-js', plugin_dir_url(__FILE__).'js/assistant-frontend.js', ['jquery'], '2.9.20', true);
+        wp_enqueue_style('oa-frontend-css', plugin_dir_url(__FILE__).'css/assistant.css', [], self::VERSION);
+        wp_enqueue_script('oa-frontend-js', plugin_dir_url(__FILE__).'js/assistant-frontend.js', ['jquery'], self::VERSION, true);
     }
 
     public function register_shortcodes() {

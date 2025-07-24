@@ -1,6 +1,6 @@
-// Admin JS for OpenAI Assistant v2.9.20
+// Admin JS for OpenAI Assistant v2.9.21
 jQuery(function($){
-  console.log('OA Admin loaded v2.9.20');
+  console.log('OA Admin loaded v2.9.21');
   $('#oa-add-config').on('click', function(){
     var table = $('#oa-configs tbody');
     var idx = table.find('tr').length;
