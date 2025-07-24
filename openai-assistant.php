@@ -2,7 +2,7 @@
 /*
 Plugin Name: OpenAI Assistant
 Description: Embed OpenAI Assistants via shortcode.
-Version: 2.9.22
+Version: 2.9.23
 Author: Tangible Data
 Text Domain: oa-assistant
 */
@@ -10,7 +10,7 @@ Text Domain: oa-assistant
 if (!defined('ABSPATH')) exit;
 
 class OA_Assistant_Plugin {
-    const VERSION = "2.9.22";
+    const VERSION = "2.9.23";
     public function __construct() {
         $this->maybe_migrate_key();
         add_action('admin_menu', [$this, 'add_admin_menu']);
@@ -97,6 +97,10 @@ class OA_Assistant_Plugin {
         return $plain ?: '';
     }
 
+    private function log_error($msg) {
+        update_option('oa_assistant_last_error', date('Y-m-d H:i:s') . ' - ' . $msg);
+    }
+
     private function get_api_key() {
         $enc = get_option('oa_assistant_api_key_enc', '');
         return $this->decrypt_key($enc);
@@ -129,7 +133,13 @@ class OA_Assistant_Plugin {
     }
 
     public function settings_page() {
+        $last_error = get_option('oa_assistant_last_error', '');
         echo '<div class="wrap"><h1>OpenAI Assistant</h1>';
+        echo '<p><em>Version '.self::VERSION.'</em></p>';
+        if ($last_error) {
+            echo '<div style="border:1px solid #c00;padding:10px;background:#fff0f0;margin-bottom:15px;">'
+                .'<strong>Último error:</strong> '.esc_html($last_error).'</div>';
+        }
         echo '<form method="post" action="options.php">';
         settings_fields('oa-assistant-general');
         do_settings_sections('oa-assistant-general');
@@ -201,6 +211,7 @@ class OA_Assistant_Plugin {
         $slug = sanitize_text_field($_POST['slug'] ?? '');
         $msg  = sanitize_text_field($_POST['message'] ?? '');
         if (!$slug || !$msg) {
+            $this->log_error('Faltan parámetros');
             wp_send_json_error('Faltan parámetros');
         }
         $configs = get_option('oa_assistant_configs', []);
@@ -208,6 +219,7 @@ class OA_Assistant_Plugin {
             return $c['slug'] === $slug;
         });
         if (!$cfgs) {
+            $this->log_error('Assistant no encontrado: ' . $slug);
             wp_send_json_error('Assistant no encontrado');
         }
         $c = array_pop($cfgs);
@@ -242,25 +254,34 @@ class OA_Assistant_Plugin {
         ]);
 
         if (is_wp_error($response)) {
-            error_log('OpenAI request failed: '.$response->get_error_message());
+            $msg_err = $response->get_error_message();
+            $this->log_error('OpenAI request failed: '.$msg_err);
+            error_log('OpenAI request failed: '.$msg_err);
             wp_send_json_error('Error al conectar con OpenAI', 500);
         }
 
         $status = wp_remote_retrieve_response_code($response);
         if ($status !== 200) {
-            error_log('OpenAI API status '.$status.': '.wp_remote_retrieve_body($response));
+            $body_err = wp_remote_retrieve_body($response);
+            $this->log_error('OpenAI API status '.$status.': '.$body_err);
+            error_log('OpenAI API status '.$status.': '.$body_err);
             wp_send_json_error('Error del servicio OpenAI', 500);
         }
 
         $body = json_decode(wp_remote_retrieve_body($response), true);
         if (json_last_error() !== JSON_ERROR_NONE) {
+            $this->log_error('OpenAI JSON decode error: '.json_last_error_msg());
             error_log('OpenAI JSON decode error: '.json_last_error_msg());
             wp_send_json_error('Respuesta inválida del servicio', 500);
         }
         $reply = $body['choices'][0]['message']['content'] ?? '';
         if (!$reply) {
+            $this->log_error('OpenAI empty reply');
             wp_send_json_error('No llegó respuesta del assistant', 500);
         }
+
+        // clear previous error on success
+        $this->log_error('');
 
         wp_send_json_success(['reply' => $reply]);
     }
