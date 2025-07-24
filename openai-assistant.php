@@ -2,7 +2,7 @@
 /*
 Plugin Name: OpenAI Assistant
 Description: Embed OpenAI Assistants via shortcode.
-Version: 2.9.25
+Version: 2.9.26
 Author: Tangible Data
 Text Domain: oa-assistant
 */
@@ -10,7 +10,7 @@ Text Domain: oa-assistant
 if (!defined('ABSPATH')) exit;
 
 class OA_Assistant_Plugin {
-    const VERSION = "2.9.25";
+    const VERSION = "2.9.26";
     public function __construct() {
         $this->maybe_migrate_key();
         add_action('admin_menu', [$this, 'add_admin_menu']);
@@ -147,6 +147,15 @@ class OA_Assistant_Plugin {
         echo '</form>';
 
         $configs = get_option('oa_assistant_configs', []);
+        if (empty($configs)) {
+            $configs[] = [
+                'nombre' => '',
+                'slug' => '',
+                'assistant_id' => '',
+                'developer_instructions' => '',
+                'vector_store_id' => '',
+            ];
+        }
         echo '<h2>'.__('Assistants','oa-assistant').'</h2>';
         echo '<form method="post" action="options.php">';
         settings_fields('oa-assistant-configs');
@@ -251,6 +260,7 @@ class OA_Assistant_Plugin {
                 'Authorization' => 'Bearer ' . $this->get_api_key(),
             ],
             'body'    => wp_json_encode($payload),
+            'timeout' => 15,
         ]);
 
         if (is_wp_error($response)) {
@@ -288,7 +298,11 @@ class OA_Assistant_Plugin {
 
     // Simple vector context retrieval using WP posts as storage
     private function get_vector_context($vector_store_id, $query) {
-        if (empty($vector_store_id) || empty($query)) return [];
+        $vector_store_id = sanitize_title($vector_store_id);
+        $query = sanitize_text_field($query);
+        if (empty($vector_store_id) || empty($query)) {
+            return [];
+        }
 
         $posts = get_posts([
             's'              => $query,
