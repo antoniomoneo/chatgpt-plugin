@@ -251,6 +251,7 @@ class OA_Assistant_Plugin {
                 'Authorization' => 'Bearer ' . $this->get_api_key(),
             ],
             'body'    => wp_json_encode($payload),
+            'timeout' => 15,
         ]);
 
         if (is_wp_error($response)) {
@@ -288,7 +289,11 @@ class OA_Assistant_Plugin {
 
     // Simple vector context retrieval using WP posts as storage
     private function get_vector_context($vector_store_id, $query) {
-        if (empty($vector_store_id) || empty($query)) return [];
+        $vector_store_id = sanitize_title($vector_store_id);
+        $query = sanitize_text_field($query);
+        if (empty($vector_store_id) || empty($query)) {
+            return [];
+        }
 
         $posts = get_posts([
             's'              => $query,
