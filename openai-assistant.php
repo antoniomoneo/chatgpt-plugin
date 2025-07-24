@@ -2,7 +2,7 @@
 /*
 Plugin Name: OpenAI Assistant
 Description: Embed OpenAI Assistants via shortcode.
-Version: 2.9.23
+Version: 2.9.24
 Author: Tangible Data
 Text Domain: oa-assistant
 */
@@ -10,7 +10,7 @@ Text Domain: oa-assistant
 if (!defined('ABSPATH')) exit;
 
 class OA_Assistant_Plugin {
-    const VERSION = "2.9.23";
+    const VERSION = "2.9.24";
     public function __construct() {
         $this->maybe_migrate_key();
         add_action('admin_menu', [$this, 'add_admin_menu']);
