@@ -2,7 +2,7 @@
 /*
 Plugin Name: OpenAI Assistant
 Description: Embed OpenAI Assistants via shortcode.
-Version: 2.9.21
+Version: 2.9.22
 Author: Tangible Data
 Text Domain: oa-assistant
 */
@@ -10,7 +10,7 @@ Text Domain: oa-assistant
 if (!defined('ABSPATH')) exit;
 
 class OA_Assistant_Plugin {
-    const VERSION = "2.9.21";
+    const VERSION = "2.9.22";
     public function __construct() {
         $this->maybe_migrate_key();
         add_action('admin_menu', [$this, 'add_admin_menu']);
@@ -40,7 +40,12 @@ class OA_Assistant_Plugin {
             if (method_exists($this, 'get_api_key')) {
                 $val = $this->get_api_key();
             }
-            printf('<input type="password" id="oa_assistant_api_key" name="oa_assistant_api_key_enc" value="%s" class="regular-text" />', esc_attr($val));
+            printf(
+                '<input type="password" id="oa_assistant_api_key" name="oa_assistant_api_key_enc" value="%s" class="regular-text" placeholder="sk-..." />'
+                . '<p class="description">%s</p>',
+                esc_attr($val),
+                esc_html__('Introduce tu clave secreta empezando por sk-', 'oa-assistant')
+            );
         }, 'oa-assistant-general', 'oa-assistant-api-section');
 
         register_setting('oa-assistant-configs', 'oa_assistant_configs', [
@@ -139,7 +144,12 @@ class OA_Assistant_Plugin {
         echo '<th>'.__('Nombre','oa-assistant').'</th><th>'.__('Slug').'</th><th>Assistant ID</th><th>'.__('Instrucciones').'</th><th>Vector store ID</th></tr></thead><tbody>';
         $i=0;
         foreach($configs as $cfg){
-            printf('<tr><td><input name="oa_assistant_configs[%1$d][nombre]" value="%2$s" /></td><td><input name="oa_assistant_configs[%1$d][slug]" value="%3$s" /></td><td><input name="oa_assistant_configs[%1$d][assistant_id]" value="%4$s" /></td><td><textarea name="oa_assistant_configs[%1$d][developer_instructions]">%5$s</textarea></td><td><input name="oa_assistant_configs[%1$d][vector_store_id]" value="%6$s" /></td></tr>',
+            printf(
+                '<tr><td><input class="regular-text" name="oa_assistant_configs[%1$d][nombre]" value="%2$s" placeholder="Ej: Soporte" /></td>'
+                .'<td><input class="regular-text" name="oa_assistant_configs[%1$d][slug]" value="%3$s" placeholder="soporte" /></td>'
+                .'<td><input class="regular-text" name="oa_assistant_configs[%1$d][assistant_id]" value="%4$s" placeholder="asst_..." /></td>'
+                .'<td><textarea name="oa_assistant_configs[%1$d][developer_instructions]" rows="3" style="width:100%;" placeholder="Instrucciones para el assistant">%5$s</textarea></td>'
+                .'<td><input class="regular-text" name="oa_assistant_configs[%1$d][vector_store_id]" value="%6$s" placeholder="categoria" /></td></tr>',
                 $i,
                 esc_attr($cfg['nombre']),
                 esc_attr($cfg['slug']),
