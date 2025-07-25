@@ -6,9 +6,14 @@ jQuery(function($){
         nonce=w.attr('data-nonce'),
         msgs=w.find('.oa-messages'),
         input=w.find('input[name="user_message"]');
+
+    function esc(t){
+      return $('<div>').text(t).html();
+    }
+
     function sendMessage(text){
       if(!text) return;
-      msgs.append('<div class="msg user">'+text+'</div>');
+      msgs.append('<div class="msg user">'+esc(text)+'</div>');
       input.val('').focus();
       $.post(ajaxUrl,{
         action:'oa_assistant_chat',
@@ -16,11 +21,11 @@ jQuery(function($){
         slug:slug,
         message:text
       }).done(function(res){
-        msgs.append('<div class="msg bot">'+(res.success?res.data.reply:res.data)+'</div>');
+        msgs.append('<div class="msg bot">'+esc(res.success?res.data.reply:res.data)+'</div>');
       }).fail(function(){
         msgs.append('<div class="msg error">Error al enviar</div>');
       });
-      w[0].scrollTop = w[0].scrollHeight;
+      msgs[0].scrollTop = msgs[0].scrollHeight;
     }
     w.find('.oa-form').on('submit', function(e){e.preventDefault(); sendMessage(input.val().trim());});
     input.on('keypress', function(e){ if(e.which===13){e.preventDefault(); sendMessage(input.val().trim());}});
