@@ -2,7 +2,7 @@
 /*
 Plugin Name: OpenAI Assistant
 Description: Embed OpenAI Assistants via shortcode.
-Version: 2.9.25
+Version: 2.9.28
 Author: Tangible Data
 Text Domain: oa-assistant
 */
@@ -10,7 +10,7 @@ Text Domain: oa-assistant
 if (!defined('ABSPATH')) exit;
 
 class OA_Assistant_Plugin {
-    const VERSION = "2.9.25";
+    const VERSION = "2.9.28";
     public function __construct() {
         $this->maybe_migrate_key();
         add_action('admin_menu', [$this, 'add_admin_menu']);
@@ -32,6 +32,20 @@ class OA_Assistant_Plugin {
             'sanitize_callback' => [$this, 'sanitize_and_encrypt_key'],
             'default' => '',
         ]);
+        register_setting('oa-assistant-general', 'oa_assistant_debug', [
+            'type' => 'boolean',
+            'sanitize_callback' => 'absint',
+            'default' => 0,
+        ]);
+        register_setting('oa-assistant-general', 'oa_assistant_debug_log', [
+            'type' => 'array',
+            'default' => [],
+        ]);
+        register_setting('oa-assistant-general', 'oa_assistant_last_error', [
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => '',
+        ]);
         add_settings_section('oa-assistant-api-section', 'Ajustes generales', function(){
             echo '<p>Tu clave secreta de OpenAI.</p>';
         }, 'oa-assistant-general');
@@ -46,6 +60,10 @@ class OA_Assistant_Plugin {
                 esc_attr($val),
                 esc_html__('Introduce tu clave secreta empezando por sk-', 'oa-assistant')
             );
+        }, 'oa-assistant-general', 'oa-assistant-api-section');
+        add_settings_field('oa_assistant_debug', 'Debug', function(){
+            $val = get_option('oa_assistant_debug', 0);
+            echo '<label><input type="checkbox" name="oa_assistant_debug" value="1" '.checked($val,1,false).' /> '.__('Habilitar debug','oa-assistant').'</label>';
         }, 'oa-assistant-general', 'oa-assistant-api-section');
 
         register_setting('oa-assistant-configs', 'oa_assistant_configs', [
@@ -98,7 +116,29 @@ class OA_Assistant_Plugin {
     }
 
     private function log_error($msg) {
+        if ($msg === '') {
+            $this->clear_error();
+            return;
+        }
         update_option('oa_assistant_last_error', date('Y-m-d H:i:s') . ' - ' . $msg);
+        $this->log_debug('ERROR: '.$msg);
+    }
+
+    private function clear_error() {
+        update_option('oa_assistant_last_error', '');
+    }
+
+    private function log_debug($msg) {
+        if (!get_option('oa_assistant_debug')) return;
+        $log = get_option('oa_assistant_debug_log', []);
+        if (!is_array($log)) {
+            $log = [];
+        }
+        $log[] = date('H:i:s') . ' - ' . $msg;
+        if (count($log) > 50) {
+            $log = array_slice($log, -50);
+        }
+        update_option('oa_assistant_debug_log', $log);
     }
 
     private function get_api_key() {
@@ -146,7 +186,22 @@ class OA_Assistant_Plugin {
         submit_button();
         echo '</form>';
 
+        if (get_option('oa_assistant_debug')) {
+            $log = get_option('oa_assistant_debug_log', []);
+            echo '<h2>Debug Log</h2>';
+            echo '<textarea readonly style="width:100%;height:150px;">'.esc_textarea(implode("\n", $log)).'</textarea>';
+        }
+
         $configs = get_option('oa_assistant_configs', []);
+        if (empty($configs)) {
+            $configs[] = [
+                'nombre' => '',
+                'slug' => '',
+                'assistant_id' => '',
+                'developer_instructions' => '',
+                'vector_store_id' => '',
+            ];
+        }
         echo '<h2>'.__('Assistants','oa-assistant').'</h2>';
         echo '<form method="post" action="options.php">';
         settings_fields('oa-assistant-configs');
@@ -203,13 +258,19 @@ class OA_Assistant_Plugin {
           </form>
         </div>
         <?php
-        return ob_get_clean();
+        $out = ob_get_clean();
+        if (get_option('oa_assistant_debug') && (current_user_can('manage_options') || isset($_GET['oa_debug']))) {
+            $log = get_option('oa_assistant_debug_log', []);
+            $out .= '<pre class="oa-debug-log">'.esc_html(implode("\n", $log)).'</pre>';
+        }
+        return $out;
     }
 
     public function ajax_chat() {
         check_ajax_referer('oa_assistant_chat','nonce');
         $slug = sanitize_text_field($_POST['slug'] ?? '');
         $msg  = sanitize_text_field($_POST['message'] ?? '');
+        $this->log_debug("ajax_chat slug={$slug} msg={$msg}");
         if (!$slug || !$msg) {
             $this->log_error('Faltan parámetros');
             wp_send_json_error('Faltan parámetros');
@@ -245,13 +306,21 @@ class OA_Assistant_Plugin {
             'temperature' => 0.7,
         ];
 
+        $key = $this->get_api_key();
+        if (empty($key)) {
+            $this->log_error('API key missing');
+            wp_send_json_error('API key no configurada', 500);
+        }
+
         $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Content-Type'  => 'application/json',
-                'Authorization' => 'Bearer ' . $this->get_api_key(),
+                'Authorization' => 'Bearer ' . $key,
             ],
             'body'    => wp_json_encode($payload),
+            'timeout' => 15,
         ]);
+        $this->log_debug('OpenAI request sent');
 
         if (is_wp_error($response)) {
             $msg_err = $response->get_error_message();
@@ -261,6 +330,7 @@ class OA_Assistant_Plugin {
         }
 
         $status = wp_remote_retrieve_response_code($response);
+        $this->log_debug('OpenAI status '.$status);
         if ($status !== 200) {
             $body_err = wp_remote_retrieve_body($response);
             $this->log_error('OpenAI API status '.$status.': '.$body_err);
@@ -280,15 +350,21 @@ class OA_Assistant_Plugin {
             wp_send_json_error('No llegó respuesta del assistant', 500);
         }
 
+        $this->log_debug('OpenAI reply received');
+
         // clear previous error on success
-        $this->log_error('');
+        $this->clear_error();
 
         wp_send_json_success(['reply' => $reply]);
     }
 
     // Simple vector context retrieval using WP posts as storage
     private function get_vector_context($vector_store_id, $query) {
-        if (empty($vector_store_id) || empty($query)) return [];
+        $vector_store_id = sanitize_title($vector_store_id);
+        $query = sanitize_text_field($query);
+        if (empty($vector_store_id) || empty($query)) {
+            return [];
+        }
 
         $posts = get_posts([
             's'              => $query,
