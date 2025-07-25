@@ -154,6 +154,7 @@ class OA_Assistant_Plugin {
         $plain = get_option('oa_assistant_api_key', '');
         if ($plain) {
             update_option('oa_assistant_api_key_enc', $this->encrypt_key($plain));
+            delete_option('oa_assistant_api_key');
         }
     }
 
